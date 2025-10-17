@@ -107,13 +107,14 @@ vector<Token> tokenize(const string &code) {
         }
         else {
             cerr << "Unknown character: " << c << " at position " << pos << endl;
-            ++pos; // 避免死循环
+            ++pos; // 避免死循环，遇到问题则抛出错误
         }
     }
 
     return tokens;
 }
-
+// 主函数部分
+// 参考规则，test.c文件中未结束则持续判断类型，换行输出元素类型和内容。格式为id+类型+数值
 int main() {
     string code, line;
     while (getline(cin, line)) {
