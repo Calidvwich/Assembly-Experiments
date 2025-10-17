@@ -86,14 +86,12 @@ vector<Token> tokenize(const string &code) {
             }
         }
         // 数字
-        // 更改：负整数问题
-        else if (isDigit(c) || (c == '-' && pos + 1 < code.size() && isDigit(code[pos+1]))) {
+        else if (isDigit(c)) {
             size_t start = pos;
-            if (c == '-') ++pos;
             while (pos < code.size() && isDigit(code[pos])) ++pos;
             string num = code.substr(start, pos - start);
             tokens.push_back({index++, "IntConst", "\"" + num + "\""});
-        }
+        }          
         // 双字符运算符
         else if (pos + 1 < code.size() && doubleOps.count(code.substr(pos,2))) {
             string op = code.substr(pos,2);
