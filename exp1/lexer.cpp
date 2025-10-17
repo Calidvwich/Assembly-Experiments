@@ -86,6 +86,7 @@ vector<Token> tokenize(const string &code) {
             }
         }
         // 数字
+        // 更改：负整数问题
         else if (isDigit(c) || (c == '-' && pos + 1 < code.size() && isDigit(code[pos+1]))) {
             size_t start = pos;
             if (c == '-') ++pos;
