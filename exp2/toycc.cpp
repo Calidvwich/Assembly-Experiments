@@ -153,12 +153,16 @@ public:
         else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
         if(fname=="main" && is_int && params.empty()) has_main=true;
 
+        int scope_before = var_scopes.size();
         var_scopes.emplace_back();
         for(auto &p: params) var_scopes.back()[p]=decl_line;
 
         parseBlock(true);  // Pass true to indicate this is a function body
 
-        var_scopes.pop_back();
+        // Ensure all scopes added by this function are removed
+        while((int)var_scopes.size() > scope_before) {
+            var_scopes.pop_back();
+        }
         
         // Reset loop state after function
         in_loop = false;
@@ -171,10 +175,13 @@ public:
         
         while(cur.type!=TokType::RBRACE && cur.type!=TokType::END) {
             // Only check for function keywords in function body blocks
-            if(is_function_body && cur.type==TokType::KW_VOID) {
-                add_error(cur.line);
-                var_scopes.pop_back();
-                return false;
+            if(is_function_body) {
+                if(cur.type==TokType::KW_VOID) {
+                    add_error(cur.line);
+                    var_scopes.pop_back();
+                    return false;
+                }
+                // Don't check for KW_INT here - it's used for variable declarations
             }
             parseStmt();
         }
