@@ -123,12 +123,7 @@ public:
 
     void parseCompUnit(){
         while(cur.type!=TokType::END){
-            if(cur.type==TokType::KW_INT || cur.type==TokType::KW_VOID) {
-                // Ensure clean state before parsing each function
-                var_scopes.clear();
-                in_loop = false;
-                parseFuncDef();
-            }
+            if(cur.type==TokType::KW_INT || cur.type==TokType::KW_VOID) parseFuncDef();
             else { add_error(cur.line); while(cur.type!=TokType::KW_INT && cur.type!=TokType::KW_VOID && cur.type!=TokType::END) advance();}
         }
         if(!has_main) add_error(1);
@@ -158,36 +153,30 @@ public:
         else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
         if(fname=="main" && is_int && params.empty()) has_main=true;
 
-        // Save scope size before function
-        int scope_size_before = var_scopes.size();
-        
         var_scopes.emplace_back();
         for(auto &p: params) var_scopes.back()[p]=decl_line;
 
-        parseBlock();
+        parseBlock(true);  // Pass true to indicate this is a function body
 
-        // Clean up all scopes added during this function
-        while((int)var_scopes.size() > scope_size_before) {
-            var_scopes.pop_back();
-        }
+        var_scopes.pop_back();
         
         // Reset loop state after function
         in_loop = false;
     }
 
-    bool parseBlock(){
+    bool parseBlock(bool is_function_body = false){
         int block_line = cur.line;
         if(!expect(TokType::LBRACE, block_line)) return false;
         var_scopes.emplace_back();
-        while(cur.type!=TokType::RBRACE && cur.type!=TokType::END && 
-              cur.type!=TokType::KW_VOID) {
+        
+        while(cur.type!=TokType::RBRACE && cur.type!=TokType::END) {
+            // Only check for function keywords in function body blocks
+            if(is_function_body && cur.type==TokType::KW_VOID) {
+                add_error(cur.line);
+                var_scopes.pop_back();
+                return false;
+            }
             parseStmt();
-        }
-        if(cur.type==TokType::KW_VOID) {
-            // Found void keyword inside a block - missing closing brace
-            add_error(cur.line);
-            var_scopes.pop_back();
-            return false;
         }
         bool rbrace_ok = expect(TokType::RBRACE, block_line);
         var_scopes.pop_back();
