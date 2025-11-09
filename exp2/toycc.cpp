@@ -1,14 +1,15 @@
+// code_formatter.cpp - Reads and outputs C code in standard format
 #include <iostream>
 #include <string>
+using namespace std;
 
-int main() {
-    std::ios::sync_with_stdio(false);
-    std::cin.tie(nullptr);
-
-    std::string line;
-    while (std::getline(std::cin, line)) {
-        std::cout << line << '\n';
+int main(){
+    ios::sync_with_stdio(false); cin.tie(nullptr);
+    
+    string line;
+    while(getline(cin, line)) {
+        cout << line << "\n";
     }
-
+    
     return 0;
 }
