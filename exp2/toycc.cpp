@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <queue>
+#include <sstream>
 using namespace std;
 
 enum class TokType {
@@ -124,7 +125,6 @@ public:
     void parseCompUnit(){
         while(cur.type!=TokType::END){
             if(cur.type==TokType::KW_INT || cur.type==TokType::KW_VOID) {
-                // Ensure clean state before parsing each function
                 var_scopes.clear();
                 in_loop = false;
                 parseFuncDef();
@@ -158,7 +158,6 @@ public:
         else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
         if(fname=="main" && is_int && params.empty()) has_main=true;
 
-        // Save scope size before function
         int scope_size_before = var_scopes.size();
         
         var_scopes.emplace_back();
@@ -166,12 +165,10 @@ public:
 
         parseBlock();
 
-        // Clean up all scopes added during this function
         while((int)var_scopes.size() > scope_size_before) {
             var_scopes.pop_back();
         }
         
-        // Reset loop state after function
         in_loop = false;
     }
 
@@ -184,7 +181,6 @@ public:
             parseStmt();
         }
         if(cur.type==TokType::KW_VOID) {
-            // Found void keyword inside a block - missing closing brace
             add_error(cur.line);
             var_scopes.pop_back();
             return false;
@@ -310,9 +306,28 @@ public:
 
 int main(){
     ios::sync_with_stdio(false); cin.tie(nullptr);
-    Parser p(cin);
+    
+    // 读取所有输入到字符串
+    string input_content;
+    string line;
+    while(getline(cin, line)) {
+        input_content += line + "\n";
+    }
+    
+    // 输出输入内容
+    cout << input_content;
+    
+    // 使用stringstream进行解析
+    istringstream iss(input_content);
+    Parser p(iss);
     p.parseCompUnit();
     auto errs = p.get_errors();
-    if(errs.empty()){ cout<<"accept\n"; }
-    else{ cout<<"reject\n"; for(int ln: errs) cout<<ln<<"\n"; }
+    
+    if(errs.empty()){ 
+        cout<<"accept\n"; 
+    }
+    else{ 
+        cout<<"reject\n"; 
+        for(int ln: errs) cout<<ln<<"\n"; 
+    }
 }
