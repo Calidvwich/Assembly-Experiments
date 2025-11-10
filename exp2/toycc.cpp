@@ -2,12 +2,10 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <algorithm>
-#include <cmath>
-#include <map>
 #include <set>
-#include <queue>
+#include <map>
 #include <sstream>
+#include <cctype>
 using namespace std;
 
 enum class TokType {
@@ -33,7 +31,7 @@ class Lexer {
 public:
     Lexer(istream &is): in(is), line(1) { cur = in.get(); }
 
-    int peek() { return cur; }
+    int peek() { return in.peek(); }
     void consume() { cur = in.get(); if(cur=='\n') line++; }
 
     bool isIdentStart(int c){ return c=='_' || isalpha(c); }
@@ -42,8 +40,9 @@ public:
     Token nextToken() {
         while(cur!=EOF && isspace(cur)) consume();
 
+        // 注释处理
         if(cur=='/'){
-            int next = in.peek();
+            int next = peek();
             if(next=='/'){ consume(); consume(); while(cur!=EOF && cur!='\n') consume(); return nextToken(); }
             if(next=='*'){ consume(); consume(); while(cur!=EOF){ if(cur=='*'){ consume(); if(cur=='/'){ consume(); break; } } else consume(); } return nextToken(); }
         }
@@ -88,8 +87,8 @@ public:
             case '=': consume(); if(cur=='='){ consume(); tok.type=TokType::EQ; } else tok.type=TokType::ASSIGN; break;
             case '<': consume(); if(cur=='='){ consume(); tok.type=TokType::LE; } else tok.type=TokType::LT; break;
             case '>': consume(); if(cur=='='){ consume(); tok.type=TokType::GE; } else tok.type=TokType::GT; break;
-            case '&': consume(); if(cur=='&'){ consume(); tok.type=TokType::LAND; } else tok.type=TokType::UNKNOWN; break;
-            case '|': consume(); if(cur=='|'){ consume(); tok.type=TokType::LOR; } else tok.type=TokType::UNKNOWN; break;
+            case '&': consume(); if(cur=='&'){ tok.type=TokType::LAND; consume(); } else tok.type=TokType::UNKNOWN; break;
+            case '|': consume(); if(cur=='|'){ tok.type=TokType::LOR; consume(); } else tok.type=TokType::UNKNOWN; break;
             default: tok.type=TokType::UNKNOWN; consume(); break;
         }
         return tok;
@@ -141,7 +140,7 @@ public:
         int decl_line = cur.line;
         string fname;
         if(cur.type==TokType::ID){ fname=cur.lexeme; advance(); }
-        else{ add_error(decl_line); sync_until({TokType::LPAREN, TokType::LBRACE, TokType::SEMI, TokType::END}); if(cur.type==TokType::ID) { fname=cur.lexeme; advance(); } }
+        else{ add_error(decl_line); sync_until({TokType::LPAREN}); if(cur.type==TokType::ID) { fname=cur.lexeme; advance(); } }
         
         int lparen_line = cur.line;
         expect(TokType::LPAREN, lparen_line);
@@ -158,17 +157,10 @@ public:
         else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
         if(fname=="main" && is_int && params.empty()) has_main=true;
 
-        int scope_size_before = var_scopes.size();
-        
         var_scopes.emplace_back();
         for(auto &p: params) var_scopes.back()[p]=decl_line;
-
         parseBlock();
-
-        while((int)var_scopes.size() > scope_size_before) {
-            var_scopes.pop_back();
-        }
-        
+        var_scopes.pop_back();
         in_loop = false;
     }
 
@@ -176,15 +168,7 @@ public:
         int block_line = cur.line;
         if(!expect(TokType::LBRACE, block_line)) return false;
         var_scopes.emplace_back();
-        while(cur.type!=TokType::RBRACE && cur.type!=TokType::END && 
-              cur.type!=TokType::KW_VOID) {
-            parseStmt();
-        }
-        if(cur.type==TokType::KW_VOID) {
-            add_error(cur.line);
-            var_scopes.pop_back();
-            return false;
-        }
+        while(cur.type!=TokType::RBRACE && cur.type!=TokType::END) parseStmt();
         bool rbrace_ok = expect(TokType::RBRACE, block_line);
         var_scopes.pop_back();
         return rbrace_ok;
@@ -199,7 +183,7 @@ public:
             int if_line = cur.line;
             advance(); 
             expect(TokType::LPAREN, if_line); 
-            parseExpr(stmt_line); 
+            parseExpr(if_line); 
             expect(TokType::RPAREN, if_line); 
             parseStmt();
             if(cur.type==TokType::KW_ELSE){ advance(); parseStmt(); }
@@ -211,7 +195,7 @@ public:
             expect(TokType::LPAREN, while_line); 
             bool old_loop=in_loop; 
             in_loop=true; 
-            parseExpr(stmt_line); 
+            parseExpr(while_line); 
             expect(TokType::RPAREN, while_line); 
             parseStmt(); 
             in_loop=old_loop; 
@@ -225,13 +209,20 @@ public:
             advance();
             if(cur.type!=TokType::ID){ add_error(stmt_line); sync_until({TokType::SEMI}); if(cur.type==TokType::SEMI) advance(); return; }
             string var = cur.lexeme; advance();
-            expect(TokType::ASSIGN, stmt_line); parseExpr(stmt_line); expect(TokType::SEMI, stmt_line);
+            if(expect(TokType::ASSIGN, stmt_line)) parseExpr(stmt_line);
+            expect(TokType::SEMI, stmt_line);
             var_scopes.back()[var]=stmt_line; return;
         }
 
         if(cur.type==TokType::ID){
             Token saved=cur; advance();
-            if(cur.type==TokType::ASSIGN){ advance(); parseExpr(stmt_line); expect(TokType::SEMI, stmt_line); if(!isVarDeclared(saved.lexeme)) add_error(stmt_line); return; }
+            if(cur.type==TokType::ASSIGN){ 
+                advance(); 
+                parseExpr(stmt_line); 
+                expect(TokType::SEMI, stmt_line); 
+                if(!isVarDeclared(saved.lexeme)) add_error(stmt_line); 
+                return; 
+            }
             else{ parseExprLeadingId(saved, stmt_line); expect(TokType::SEMI, stmt_line); return; }
         }
 
@@ -264,7 +255,19 @@ public:
 
     void parseLOr(int stmt_line){ parseLAnd(stmt_line); while(cur.type==TokType::LOR){ advance(); parseLAnd(stmt_line); } }
     void parseLAnd(int stmt_line){ parseRel(stmt_line); while(cur.type==TokType::LAND){ advance(); parseRel(stmt_line); } }
-    void parseRel(int stmt_line){ parseAdd(stmt_line); while(cur.type==TokType::LT || cur.type==TokType::GT || cur.type==TokType::LE || cur.type==TokType::GE || cur.type==TokType::EQ || cur.type==TokType::NE){ advance(); parseAdd(stmt_line); } }
+    void parseRel(int stmt_line){ 
+        parseAdd(stmt_line); 
+        while(cur.type==TokType::LT || cur.type==TokType::GT || cur.type==TokType::LE || cur.type==TokType::GE || cur.type==TokType::EQ || cur.type==TokType::NE){ 
+            advance(); 
+            parseAdd(stmt_line); 
+        }
+        // 表达式不完整错误恢复
+        if (cur.type != TokType::RPAREN && cur.type != TokType::SEMI && 
+            cur.type != TokType::COMMA && cur.type != TokType::LAND && cur.type != TokType::LOR) {
+            add_error(stmt_line);
+            sync_until({TokType::RPAREN, TokType::SEMI, TokType::COMMA, TokType::LAND, TokType::LOR});
+        }
+    }
     void parseAdd(int stmt_line){ parseMul(stmt_line); while(cur.type==TokType::PLUS || cur.type==TokType::MINUS){ advance(); parseMul(stmt_line); } }
     void parseMul(int stmt_line){ parseUnary(stmt_line); while(cur.type==TokType::MUL || cur.type==TokType::DIV || cur.type==TokType::MOD){ advance(); parseUnary(stmt_line); } }
     void parseUnary(int stmt_line){ if(cur.type==TokType::PLUS || cur.type==TokType::MINUS || cur.type==TokType::LNOT){ advance(); parseUnary(stmt_line); return;} parsePrimary(stmt_line); }
@@ -299,7 +302,7 @@ public:
 
     bool isExprStart(TokType t){ return t==TokType::NUMBER || t==TokType::LPAREN || t==TokType::PLUS || t==TokType::MINUS || t==TokType::LNOT; }
 
-    void sync_until(set<TokType> syncset){ int iter=0; while(cur.type!=TokType::END && !syncset.count(cur.type) && iter<100000){ advance(); ++iter; } }
+    void sync_until(set<TokType> syncset){ int iter=0; while(cur.type!=TokType::END && !syncset.count(cur.type) && iter<10000){ advance(); ++iter; } }
 
     vector<int> get_errors(){ return errors; }
 };
@@ -314,8 +317,8 @@ int main(){
         input_content += line + "\n";
     }
     
-    // 输出输入内容
-    cout << input_content;
+    // 输出输入内容（调试用，实际可移除）
+    // cout << input_content;
     
     // 使用stringstream进行解析
     istringstream iss(input_content);
