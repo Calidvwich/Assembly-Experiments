@@ -1,336 +1,515 @@
-// toycc.cpp
 #include <iostream>
-#include <vector>
 #include <string>
-#include <set>
-#include <map>
-#include <sstream>
+#include <vector>
 #include <cctype>
+#include <map>
+#include <set>
+#include <algorithm>
+
 using namespace std;
 
-enum class TokType {
-    END, ID, NUMBER,
-    PLUS, MINUS, MUL, DIV, MOD,
-    ASSIGN, SEMI, COMMA,
-    LPAREN, RPAREN, LBRACE, RBRACE,
-    LT, GT, LE, GE, EQ, NE,
-    LAND, LOR, LNOT,
-    KW_INT, KW_VOID, KW_IF, KW_ELSE, KW_WHILE, KW_BREAK, KW_CONTINUE, KW_RETURN,
-    UNKNOWN
+enum TokenType {
+    TOK_EOF,
+    TOK_INT, TOK_VOID, TOK_IF, TOK_ELSE, TOK_WHILE,
+    TOK_BREAK, TOK_CONTINUE, TOK_RETURN,
+    TOK_ID, TOK_NUMBER,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_DIV, TOK_MOD,
+    TOK_LT, TOK_LE, TOK_GT, TOK_GE, TOK_EQ, TOK_NE,
+    TOK_AND, TOK_OR, TOK_NOT,
+    TOK_ASSIGN,
+    TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE,
+    TOK_SEMICOLON, TOK_COMMA
 };
 
 struct Token {
-    TokType type;
-    string lexeme;
+    TokenType type;
+    string value;
     int line;
 };
 
 class Lexer {
-    istream &in;
-    int cur, line;
+private:
+    string input;
+    size_t pos;
+    int line;
+    map<int, string> errors;
+
+    char peek(int offset = 0) {
+        if (pos + offset >= input.length()) return '\0';
+        return input[pos + offset];
+    }
+
+    char advance() {
+        if (pos >= input.length()) return '\0';
+        char ch = input[pos++];
+        if (ch == '\n') line++;
+        return ch;
+    }
+
+    void skipWhitespace() {
+        while (isspace(peek())) {
+            advance();
+        }
+    }
+
+    bool skipComment() {
+        if (peek() == '/' && peek(1) == '/') {
+            while (peek() != '\n' && peek() != '\0') advance();
+            return true;
+        }
+        if (peek() == '/' && peek(1) == '*') {
+            int startLine = line;
+            advance(); advance();
+            while (true) {
+                if (peek() == '\0') {
+                    errors[startLine] = "Unterminated comment";
+                    return false;
+                }
+                if (peek() == '*' && peek(1) == '/') {
+                    advance(); advance();
+                    break;
+                }
+                advance();
+            }
+            return true;
+        }
+        return false;
+    }
+
 public:
-    Lexer(istream &is): in(is), line(1) { cur = in.get(); }
+    Lexer(const string& src) : input(src), pos(0), line(1) {}
 
-    int peek() { return in.peek(); }
-    void consume() { cur = in.get(); if(cur=='\n') line++; }
-
-    bool isIdentStart(int c){ return c=='_' || isalpha(c); }
-    bool isIdentPart(int c){ return c=='_' || isalnum(c); }
+    map<int, string> getErrors() { return errors; }
 
     Token nextToken() {
-        while(cur!=EOF && isspace(cur)) consume();
-
-        // 注释处理
-        if(cur=='/'){
-            int next = peek();
-            if(next=='/'){ consume(); consume(); while(cur!=EOF && cur!='\n') consume(); return nextToken(); }
-            if(next=='*'){ consume(); consume(); while(cur!=EOF){ if(cur=='*'){ consume(); if(cur=='/'){ consume(); break; } } else consume(); } return nextToken(); }
+        while (true) {
+            skipWhitespace();
+            if (!skipComment()) break;
         }
 
-        Token tok; tok.line = line;
-        if(cur==EOF || cur==-1){ tok.type=TokType::END; return tok; }
+        Token tok;
+        tok.line = line;
 
-        if(isIdentStart(cur)){
-            string s;
-            while(cur!=EOF && isIdentPart(cur)){ s.push_back(cur); consume(); }
-            tok.lexeme=s;
-            if(s=="int") tok.type=TokType::KW_INT;
-            else if(s=="void") tok.type=TokType::KW_VOID;
-            else if(s=="if") tok.type=TokType::KW_IF;
-            else if(s=="else") tok.type=TokType::KW_ELSE;
-            else if(s=="while") tok.type=TokType::KW_WHILE;
-            else if(s=="break") tok.type=TokType::KW_BREAK;
-            else if(s=="continue") tok.type=TokType::KW_CONTINUE;
-            else if(s=="return") tok.type=TokType::KW_RETURN;
-            else tok.type=TokType::ID;
+        if (peek() == '\0') {
+            tok.type = TOK_EOF;
             return tok;
         }
 
-        if(isdigit(cur)){
-            string s; while(cur!=EOF && isdigit(cur)){ s.push_back(cur); consume(); }
-            tok.type=TokType::NUMBER; tok.lexeme=s; return tok;
+        if (isalpha(peek()) || peek() == '_') {
+            string id;
+            while (isalnum(peek()) || peek() == '_') {
+                id += advance();
+            }
+            tok.value = id;
+
+            if (id == "int") tok.type = TOK_INT;
+            else if (id == "void") tok.type = TOK_VOID;
+            else if (id == "if") tok.type = TOK_IF;
+            else if (id == "else") tok.type = TOK_ELSE;
+            else if (id == "while") tok.type = TOK_WHILE;
+            else if (id == "break") tok.type = TOK_BREAK;
+            else if (id == "continue") tok.type = TOK_CONTINUE;
+            else if (id == "return") tok.type = TOK_RETURN;
+            else tok.type = TOK_ID;
+
+            return tok;
         }
 
-        switch(cur){
-            case '+': tok.type=TokType::PLUS; consume(); break;
-            case '-': tok.type=TokType::MINUS; consume(); break;
-            case '*': tok.type=TokType::MUL; consume(); break;
-            case '/': tok.type=TokType::DIV; consume(); break;
-            case '%': tok.type=TokType::MOD; consume(); break;
-            case ';': tok.type=TokType::SEMI; consume(); break;
-            case ',': tok.type=TokType::COMMA; consume(); break;
-            case '(': tok.type=TokType::LPAREN; consume(); break;
-            case ')': tok.type=TokType::RPAREN; consume(); break;
-            case '{': tok.type=TokType::LBRACE; consume(); break;
-            case '}': tok.type=TokType::RBRACE; consume(); break;
-            case '!': consume(); if(cur=='='){ consume(); tok.type=TokType::NE; } else tok.type=TokType::LNOT; break;
-            case '=': consume(); if(cur=='='){ consume(); tok.type=TokType::EQ; } else tok.type=TokType::ASSIGN; break;
-            case '<': consume(); if(cur=='='){ consume(); tok.type=TokType::LE; } else tok.type=TokType::LT; break;
-            case '>': consume(); if(cur=='='){ consume(); tok.type=TokType::GE; } else tok.type=TokType::GT; break;
-            case '&': consume(); if(cur=='&'){ tok.type=TokType::LAND; consume(); } else tok.type=TokType::UNKNOWN; break;
-            case '|': consume(); if(cur=='|'){ tok.type=TokType::LOR; consume(); } else tok.type=TokType::UNKNOWN; break;
-            default: tok.type=TokType::UNKNOWN; consume(); break;
+        if (isdigit(peek())) {
+            string num;
+            while (isdigit(peek())) {
+                num += advance();
+            }
+            tok.type = TOK_NUMBER;
+            tok.value = num;
+            return tok;
         }
+
+        char ch = peek();
+        switch (ch) {
+            case '+': advance(); tok.type = TOK_PLUS; return tok;
+            case '-': advance(); tok.type = TOK_MINUS; return tok;
+            case '*': advance(); tok.type = TOK_STAR; return tok;
+            case '/': advance(); tok.type = TOK_DIV; return tok;
+            case '%': advance(); tok.type = TOK_MOD; return tok;
+            case '(': advance(); tok.type = TOK_LPAREN; return tok;
+            case ')': advance(); tok.type = TOK_RPAREN; return tok;
+            case '{': advance(); tok.type = TOK_LBRACE; return tok;
+            case '}': advance(); tok.type = TOK_RBRACE; return tok;
+            case ';': advance(); tok.type = TOK_SEMICOLON; return tok;
+            case ',': advance(); tok.type = TOK_COMMA; return tok;
+            case '<':
+                advance();
+                if (peek() == '=') {
+                    advance();
+                    tok.type = TOK_LE;
+                } else {
+                    tok.type = TOK_LT;
+                }
+                return tok;
+            case '>':
+                advance();
+                if (peek() == '=') {
+                    advance();
+                    tok.type = TOK_GE;
+                } else {
+                    tok.type = TOK_GT;
+                }
+                return tok;
+            case '=':
+                advance();
+                if (peek() == '=') {
+                    advance();
+                    tok.type = TOK_EQ;
+                } else {
+                    tok.type = TOK_ASSIGN;
+                }
+                return tok;
+            case '!':
+                advance();
+                if (peek() == '=') {
+                    advance();
+                    tok.type = TOK_NE;
+                } else {
+                    tok.type = TOK_NOT;
+                }
+                return tok;
+            case '&':
+                advance();
+                if (peek() == '&') {
+                    advance();
+                    tok.type = TOK_AND;
+                    return tok;
+                }
+                break;
+            case '|':
+                advance();
+                if (peek() == '|') {
+                    advance();
+                    tok.type = TOK_OR;
+                    return tok;
+                }
+                break;
+        }
+        
+        advance();
+        tok.type = TOK_EOF;
         return tok;
     }
 };
 
 class Parser {
-    Lexer lex;
-    Token cur;
-    vector<int> errors;
-    set<int> error_set;
+private:
+    vector<Token> tokens;
+    size_t pos;
+    map<int, string> errors;
+    int loopDepth;
+    bool hasError;
 
-    map<string,bool> functions_int;
-    map<string,int> functions_line;
-    vector<map<string,int>> var_scopes;
+    Token current() {
+        if (pos >= tokens.size()) return tokens.back();
+        return tokens[pos];
+    }
 
-    bool in_loop = false;
-    bool has_main = false;
+    Token peek(int offset = 0) {
+        if (pos + offset >= tokens.size()) return tokens.back();
+        return tokens[pos + offset];
+    }
 
-public:
-    Parser(istream &is): lex(is){ cur=lex.nextToken(); }
+    void advance() {
+        if (pos < tokens.size()) pos++;
+    }
 
-    void add_error(int ln){ if(!error_set.count(ln)){ errors.push_back(ln); error_set.insert(ln); } }
-    void advance(){ cur=lex.nextToken(); }
-    bool accept(TokType t){ if(cur.type==t){ advance(); return true;} return false; }
-    bool expect(TokType t, int stmt_line){ if(cur.type==t){ advance(); return true;} add_error(stmt_line); return false; }
+    void error(const string& msg) {
+        hasError = true;
+        int line = current().line;
+        if (errors.find(line) == errors.end()) {
+            errors[line] = msg;
+        }
+    }
 
-    bool isVarDeclared(const string &name){
-        for(int i=(int)var_scopes.size()-1;i>=0;i--) if(var_scopes[i].count(name)) return true;
+    bool match(TokenType type) {
+        return current().type == type;
+    }
+
+    bool consume(TokenType type, const string& errMsg) {
+        if (match(type)) {
+            advance();
+            return true;
+        }
+        error(errMsg);
         return false;
     }
 
-    void parseCompUnit(){
-        while(cur.type!=TokType::END){
-            if(cur.type==TokType::KW_INT || cur.type==TokType::KW_VOID) {
-                var_scopes.clear();
-                in_loop = false;
-                parseFuncDef();
-            }
-            else { add_error(cur.line); while(cur.type!=TokType::KW_INT && cur.type!=TokType::KW_VOID && cur.type!=TokType::END) advance();}
+    void sync() {
+        while (!match(TOK_EOF) && !match(TOK_SEMICOLON) && !match(TOK_RBRACE)) {
+            advance();
         }
-        if(!has_main) add_error(1);
+        if (match(TOK_SEMICOLON)) advance();
     }
 
-    void parseFuncDef(){
-        bool is_int = (cur.type==TokType::KW_INT); 
-        int func_line = cur.line;
+    void parseCompUnit() {
+        while (!match(TOK_EOF)) {
+            parseFuncDef();
+        }
+    }
+
+    void parseFuncDef() {
+        if (!match(TOK_INT) && !match(TOK_VOID)) {
+            error("Expected function return type");
+            sync();
+            if (match(TOK_RBRACE)) advance();
+            return;
+        }
         advance();
-        int decl_line = cur.line;
-        string fname;
-        if(cur.type==TokType::ID){ fname=cur.lexeme; advance(); }
-        else{ add_error(decl_line); sync_until({TokType::LPAREN}); if(cur.type==TokType::ID) { fname=cur.lexeme; advance(); } }
-        
-        int lparen_line = cur.line;
-        expect(TokType::LPAREN, lparen_line);
-        vector<string> params;
-        if(cur.type!=TokType::RPAREN){
-            while(true){
-                if(cur.type==TokType::KW_INT){ advance(); if(cur.type==TokType::ID){ params.push_back(cur.lexeme); advance(); } else add_error(cur.line);}
-                else add_error(cur.line);
-                if(cur.type==TokType::COMMA) advance(); else break;
+
+        if (!consume(TOK_ID, "Expected function name")) {
+            sync();
+            if (match(TOK_RBRACE)) advance();
+            return;
+        }
+
+        consume(TOK_LPAREN, "Lack of '('");
+
+        if (match(TOK_INT)) {
+            parseParam();
+            while (match(TOK_COMMA)) {
+                advance();
+                parseParam();
             }
         }
-        expect(TokType::RPAREN, lparen_line);
-        if(functions_int.count(fname)) add_error(decl_line);
-        else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
-        if(fname=="main" && is_int && params.empty()) has_main=true;
 
-        var_scopes.emplace_back();
-        for(auto &p: params) var_scopes.back()[p]=decl_line;
+        consume(TOK_RPAREN, "Lack of ')'");
         parseBlock();
-        var_scopes.pop_back();
-        in_loop = false;
     }
 
-    bool parseBlock(){
-        int block_line = cur.line;
-        if(!expect(TokType::LBRACE, block_line)) return false;
-        var_scopes.emplace_back();
-        while(cur.type!=TokType::RBRACE && cur.type!=TokType::END) parseStmt();
-        bool rbrace_ok = expect(TokType::RBRACE, block_line);
-        var_scopes.pop_back();
-        return rbrace_ok;
+    void parseParam() {
+        consume(TOK_INT, "Expected int");
+        consume(TOK_ID, "Expected identifier");
     }
 
-    void parseStmt(){
-        int stmt_line = cur.line;
-        if(cur.type==TokType::LBRACE){ parseBlock(); return; }
-        if(cur.type==TokType::SEMI){ advance(); return; }
+    void parseBlock() {
+        if (!consume(TOK_LBRACE, "Lack of '{'")) {
+            return;
+        }
 
-        if(cur.type==TokType::KW_IF){
-            int if_line = cur.line;
-            advance(); 
-            expect(TokType::LPAREN, if_line); 
-            parseExpr(if_line); 
-            expect(TokType::RPAREN, if_line); 
+        while (!match(TOK_RBRACE) && !match(TOK_EOF)) {
             parseStmt();
-            if(cur.type==TokType::KW_ELSE){ advance(); parseStmt(); }
-            return;
         }
-        if(cur.type==TokType::KW_WHILE){
-            int while_line = cur.line;
-            advance(); 
-            expect(TokType::LPAREN, while_line); 
-            bool old_loop=in_loop; 
-            in_loop=true; 
-            parseExpr(while_line); 
-            expect(TokType::RPAREN, while_line); 
-            parseStmt(); 
-            in_loop=old_loop; 
-            return;
-        }
-        if(cur.type==TokType::KW_BREAK){ advance(); expect(TokType::SEMI, stmt_line); if(!in_loop) add_error(stmt_line); return; }
-        if(cur.type==TokType::KW_CONTINUE){ advance(); expect(TokType::SEMI, stmt_line); if(!in_loop) add_error(stmt_line); return; }
-        if(cur.type==TokType::KW_RETURN){ advance(); parseExpr(stmt_line); expect(TokType::SEMI, stmt_line); return; }
 
-        if(cur.type==TokType::KW_INT){
+        consume(TOK_RBRACE, "Lack of '}'");
+    }
+
+    void parseStmt() {
+        if (match(TOK_INT)) {
             advance();
-            if(cur.type!=TokType::ID){ add_error(stmt_line); sync_until({TokType::SEMI}); if(cur.type==TokType::SEMI) advance(); return; }
-            string var = cur.lexeme; advance();
-            if(expect(TokType::ASSIGN, stmt_line)) parseExpr(stmt_line);
-            expect(TokType::SEMI, stmt_line);
-            var_scopes.back()[var]=stmt_line; return;
-        }
-
-        if(cur.type==TokType::ID){
-            Token saved=cur; advance();
-            if(cur.type==TokType::ASSIGN){ 
-                advance(); 
-                parseExpr(stmt_line); 
-                expect(TokType::SEMI, stmt_line); 
-                if(!isVarDeclared(saved.lexeme)) add_error(stmt_line); 
-                return; 
+            consume(TOK_ID, "Expected identifier");
+            if (match(TOK_ASSIGN)) {
+                advance();
+                parseExpr();
             }
-            else{ parseExprLeadingId(saved, stmt_line); expect(TokType::SEMI, stmt_line); return; }
-        }
-
-        if(isExprStart(cur.type)){ parseExpr(stmt_line); expect(TokType::SEMI, stmt_line); return; }
-
-        add_error(stmt_line); sync_until({TokType::SEMI, TokType::RBRACE, TokType::END}); if(cur.type==TokType::SEMI) advance();
-    }
-
-    void parseExpr(int stmt_line){ parseLOr(stmt_line); }
-
-    void parseExprLeadingId(Token &lead, int stmt_line){
-        if(cur.type==TokType::LPAREN){ 
-            int call_line = lead.line;
-            advance(); 
-            if(cur.type!=TokType::RPAREN){ 
-                while(true){ 
-                    parseExpr(stmt_line); 
-                    if(cur.type==TokType::COMMA) advance(); 
-                    else break; 
-                } 
-            } 
-            expect(TokType::RPAREN, call_line); 
-        }
-        else{ if(!isVarDeclared(lead.lexeme)) add_error(stmt_line); }
-        parseBinaryTail(stmt_line);
-    }
-
-    void parseBinaryTail(int stmt_line){ while(isBinOp(cur.type)){ advance(); parseUnary(stmt_line); } }
-    bool isBinOp(TokType t){ switch(t){ case TokType::PLUS: case TokType::MINUS: case TokType::MUL: case TokType::DIV: case TokType::MOD: case TokType::LT: case TokType::GT: case TokType::LE: case TokType::GE: case TokType::EQ: case TokType::NE: case TokType::LAND: case TokType::LOR: return true; default: return false; } }
-
-    void parseLOr(int stmt_line){ parseLAnd(stmt_line); while(cur.type==TokType::LOR){ advance(); parseLAnd(stmt_line); } }
-    void parseLAnd(int stmt_line){ parseRel(stmt_line); while(cur.type==TokType::LAND){ advance(); parseRel(stmt_line); } }
-    void parseRel(int stmt_line){ 
-        parseAdd(stmt_line); 
-        while(cur.type==TokType::LT || cur.type==TokType::GT || cur.type==TokType::LE || cur.type==TokType::GE || cur.type==TokType::EQ || cur.type==TokType::NE){ 
-            advance(); 
-            parseAdd(stmt_line); 
-        }
-        // 表达式不完整错误恢复
-        if (cur.type != TokType::RPAREN && cur.type != TokType::SEMI && 
-            cur.type != TokType::COMMA && cur.type != TokType::LAND && cur.type != TokType::LOR) {
-            add_error(stmt_line);
-            sync_until({TokType::RPAREN, TokType::SEMI, TokType::COMMA, TokType::LAND, TokType::LOR});
-        }
-    }
-    void parseAdd(int stmt_line){ parseMul(stmt_line); while(cur.type==TokType::PLUS || cur.type==TokType::MINUS){ advance(); parseMul(stmt_line); } }
-    void parseMul(int stmt_line){ parseUnary(stmt_line); while(cur.type==TokType::MUL || cur.type==TokType::DIV || cur.type==TokType::MOD){ advance(); parseUnary(stmt_line); } }
-    void parseUnary(int stmt_line){ if(cur.type==TokType::PLUS || cur.type==TokType::MINUS || cur.type==TokType::LNOT){ advance(); parseUnary(stmt_line); return;} parsePrimary(stmt_line); }
-    void parsePrimary(int stmt_line){
-        if(cur.type==TokType::ID){ 
-            Token t=cur; 
-            int id_line = cur.line;
+            // 循环解析后续用逗号分隔的变量
+            while (match(TOK_COMMA)) {
+                advance(); // 消耗逗号
+                consume(TOK_ID, "Expected identifier");
+                if (match(TOK_ASSIGN)) {
+                    advance();
+                    parseExpr();
+                }
+            }
+            consume(TOK_SEMICOLON, "Lack of ';'");
+        } else if (match(TOK_IF)) {
             advance();
-            if(cur.type==TokType::LPAREN){ 
-                advance(); 
-                if(cur.type!=TokType::RPAREN){ 
-                    while(true){ 
-                        parseExpr(stmt_line); 
-                        if(cur.type==TokType::COMMA) advance(); 
-                        else break; 
-                    } 
-                } 
-                expect(TokType::RPAREN, id_line);
+            consume(TOK_LPAREN, "Lack of '('");
+            parseExpr();
+            consume(TOK_RPAREN, "Lack of ')'");
+            parseStmt();
+            if (match(TOK_ELSE)) {
+                advance();
+                parseStmt();
             }
-            else if(!isVarDeclared(t.lexeme)) add_error(stmt_line);
-            return;
-        } else if(cur.type==TokType::NUMBER){ advance(); return;}
-        else if(cur.type==TokType::LPAREN){ 
-            int lparen_line = cur.line;
-            advance(); 
-            parseExpr(stmt_line); 
-            expect(TokType::RPAREN, lparen_line); 
-            return;
+        } else if (match(TOK_WHILE)) {
+            advance();
+            consume(TOK_LPAREN, "Lack of '('");
+            parseExpr();
+            consume(TOK_RPAREN, "Lack of ')'");
+            loopDepth++;
+            parseStmt();
+            loopDepth--;
+        } else if (match(TOK_BREAK)) {
+            advance();
+            consume(TOK_SEMICOLON, "Lack of ';'");
+        } else if (match(TOK_CONTINUE)) {
+            advance();
+            consume(TOK_SEMICOLON, "Lack of ';'");
+        } else if (match(TOK_RETURN)) {
+            advance();
+            if (!match(TOK_SEMICOLON)) {
+                parseExpr();
+            }
+            consume(TOK_SEMICOLON, "Lack of ';'");
+        } else if (match(TOK_LBRACE)) {
+            parseBlock();
+        } else if (match(TOK_ID)) {
+            advance();
+            if (match(TOK_ASSIGN)) {
+                advance();
+                parseExpr();
+                consume(TOK_SEMICOLON, "Lack of ';'");
+            } else if (match(TOK_LPAREN)) {
+                advance();
+                if (!match(TOK_RPAREN)) {
+                    parseExpr();
+                    while (match(TOK_COMMA)) {
+                        advance();
+                        parseExpr();
+                    }
+                }
+                consume(TOK_RPAREN, "Lack of ')'");
+                consume(TOK_SEMICOLON, "Lack of ';'");
+            } else {
+                consume(TOK_SEMICOLON, "Lack of ';'");
+            }
+        } else if (match(TOK_SEMICOLON)) {
+            advance();
+        } else {
+            error("Unexpected token");
+            advance();
         }
-        else{ add_error(stmt_line); advance(); return;}
     }
 
-    bool isExprStart(TokType t){ return t==TokType::NUMBER || t==TokType::LPAREN || t==TokType::PLUS || t==TokType::MINUS || t==TokType::LNOT; }
+    void parseExpr() {
+        parseLOrExpr();
+    }
 
-    void sync_until(set<TokType> syncset){ int iter=0; while(cur.type!=TokType::END && !syncset.count(cur.type) && iter<10000){ advance(); ++iter; } }
+    // LOrExpr → LAndExpr ("||" LAndExpr)*
+    void parseLOrExpr() {
+        parseLAndExpr();
+        while (match(TOK_OR)) {
+            advance();
+            parseLAndExpr();
+        }
+    }
 
-    vector<int> get_errors(){ return errors; }
+    // LAndExpr → RelExpr ("&&" RelExpr)*
+    void parseLAndExpr() {
+        parseRelExpr();
+        while (match(TOK_AND)) {
+            advance();
+            parseRelExpr();
+        }
+    }
+
+    // RelExpr → AddExpr (("<" | ">" | ...) AddExpr)*
+    void parseRelExpr() {
+        parseAddExpr();
+        while (match(TOK_LT) || match(TOK_LE) || match(TOK_GT) || 
+               match(TOK_GE) || match(TOK_EQ) || match(TOK_NE)) {
+            advance();
+            parseAddExpr();
+        }
+    }
+
+    // AddExpr → MulExpr (("+" | "-") MulExpr)*
+    void parseAddExpr() {
+        parseMulExpr();
+        while (match(TOK_PLUS) || match(TOK_MINUS)) {
+            advance();
+            parseMulExpr();
+        }
+    }
+
+    // MulExpr → UnaryExpr (("*" | "/" | "%") UnaryExpr)*
+    void parseMulExpr() {
+        parseUnaryExpr();
+        while (match(TOK_STAR) || match(TOK_DIV) || match(TOK_MOD)) {
+            advance();
+            parseUnaryExpr();
+        }
+    }
+
+    void parseUnaryExpr() {
+        if (match(TOK_PLUS) || match(TOK_MINUS) || match(TOK_NOT)) {
+            advance();
+            parseUnaryExpr();
+        } else {
+            parsePrimaryExpr();
+        }
+    }
+
+    void parsePrimaryExpr() {
+        if (match(TOK_ID)) {
+            advance();
+            if (match(TOK_LPAREN)) {
+                advance();
+                if (!match(TOK_RPAREN)) {
+                    parseExpr();
+                    while (match(TOK_COMMA)) {
+                        advance();
+                        parseExpr();
+                    }
+                }
+                consume(TOK_RPAREN, "Lack of ')'");
+            }
+        } else if (match(TOK_NUMBER)) {
+            advance();
+        } else if (match(TOK_LPAREN)) {
+            advance();
+            parseExpr();
+            consume(TOK_RPAREN, "Lack of ')'");
+        } else {
+            error("Expected expression");
+            if (!match(TOK_EOF) && !match(TOK_SEMICOLON)) {
+                advance();
+            }
+        }
+    }
+
+public:
+    Parser(const vector<Token>& toks) : tokens(toks), pos(0), loopDepth(0), hasError(false) {}
+
+    bool parse() {
+        parseCompUnit();
+        return !hasError;
+    }
+
+    map<int, string> getErrors() { return errors; }
 };
 
-int main(){
-    ios::sync_with_stdio(false); cin.tie(nullptr);
-    
-    // 读取所有输入到字符串
-    string input_content;
-    string line;
-    while(getline(cin, line)) {
-        input_content += line + "\n";
+int main() {
+    string input, line;
+    while (getline(cin, line)) {
+        input += line + "\n";
     }
+
+    Lexer lexer(input);
+    vector<Token> tokens;
     
-    // 输出输入内容（调试用，实际可移除）
-    // cout << input_content;
-    
-    // 使用stringstream进行解析
-    istringstream iss(input_content);
-    Parser p(iss);
-    p.parseCompUnit();
-    auto errs = p.get_errors();
-    
-    if(errs.empty()){ 
-        cout<<"accept\n"; 
+    while (true) {
+        Token tok = lexer.nextToken();
+        tokens.push_back(tok);
+        if (tok.type == TOK_EOF) break;
     }
-    else{ 
-        cout<<"reject\n"; 
-        for(int ln: errs) cout<<ln<<"\n"; 
+
+    auto lexErrors = lexer.getErrors();
+
+    Parser parser(tokens);
+    bool success = parser.parse();
+    auto parseErrors = parser.getErrors();
+
+    map<int, string> allErrors = lexErrors;
+    for (const auto& e : parseErrors) {
+        allErrors[e.first] = e.second;
     }
+
+    if (allErrors.empty()) {
+        cout << "accept" << endl;
+    } else {
+        cout << "reject" << endl;
+        for (const auto& e : allErrors) {
+            cout << e.first << " " << e.second << endl;
+        }
+    }
+
+    return 0;
 }

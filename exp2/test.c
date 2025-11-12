@@ -1,101 +1,342 @@
+// toycc.cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <set>
+#include <map>
+#include <sstream>
+#include <cctype>
+using namespace std;
 
-int sum8(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8) {
-    return a1 + a2 - a3 + a4 - a5 + a6 - a7 + a8;
-}
+enum class TokType {
+    END, ID, NUMBER,
+    PLUS, MINUS, MUL, DIV, MOD,
+    ASSIGN, SEMI, COMMA,
+    LPAREN, RPAREN, LBRACE, RBRACE,
+    LT, GT, LE, GE, EQ, NE,
+    LAND, LOR, LNOT,
+    KW_INT, KW_VOID, KW_IF, KW_ELSE, KW_WHILE, KW_BREAK, KW_CONTINUE, KW_RETURN,
+    UNKNOWN
+};
 
-int sum16(, int a2, int a3, int a4, int a5, int a6, int a7, int a8,
-          int a9, int a10, int a11, int a12, int a13, int a14, int a15, int a16) {
-    return a1 + a2 - a3 + a4 - a5 + a6 - a7 + a8 +
-           a9 + a10 - a11 + a12 - a13 + a14 - a15 + a16;
-}
+struct Token {
+    TokType type;
+    string lexeme;
+    int line;
+};
 
-int sum32(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8,
-          int a9, int a10, int a11, int a12, int a13, int a14, int a15, int a16,
-          int a17, int a18, int a19, int a20, int a21, int a22, int a23, int a24,
-          int a25, int a26, int a27, int a28, int a29, int a30, int a31, int a32) {
-    int sum1 = a1 + a2 - a3 + a4 - a5 + a6 - a7 + a8;
-    int sum2 = a9 + a10 - a11 + a12 - a13 + a14 - a15 + a16;
-    int sum3 = a17 + a18 - a19 + a20 - a21 + a22 - a23 + a24;
-    int sum4 = a25 + a26 - a27 + a28 - a29 + a30 - a31 + a32;
-    return sum1 + sum2 - sum3 + sum4;
-}
+class Lexer {
+    istream &in;
+    int cur, line;
+public:
+    Lexer(istream &is): in(is), line(1) { cur = in.get(); }
 
-int sum64(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8,
-          int a9, int a10, int a11, int a12, int a13, int a14, int a15, int a16,
-          int a17, int a18, int a19, int a20, int a21, int a22, int a23, int a24,
-          int a25, int a26, int a27, int a28, int a29, int a30, int a31, int a32,
-          int a33, int a34, int a35, int a36, int a37, int a38, int a39, int a40,
-          int a41, int a42, int a43, int a44, int a45, int a46, int a47, int a48,
-          int a49, int a50, int a51, int a52, int a53, int a54, int a55, int a56,
-          int a57, int a58, int a59, int a60, int a61, int a62, int a63, int a64) {
-    int sum1 = a1 + a2 - a3 + a4 - a5 + a6 - a7 + a8;
-    int sum2 = a9 + a10 - a11 + a12 - a13 + a14 - a15 + a16;
-    int sum3 = a17 + a18 - a19 + a20 - a21 + a22 - a23 + a24;
-    int sum4 = a25 + a26 - a27 + a28 - a29 + a30 - a31 + a32;
-    int sum5 = a33 + a34 - a35 + a36 - a37 + a38 - a39 + a40;
-    int sum6 = a41 + a42 - a43 + a44 - a45 + a46 - a47 + a48;
-    int sum7 = a49 + a50 - a51 + a52 - a53 + a54 - a55 + a56;
-    int sum8 = a57 + a58 - a59 + a60 - a61 + a62 - a63 + a64;
-    return sum1 + sum2 - sum3 + sum4 - sum5 + sum6 - sum7 + sum8;
-}
+    int peek() { return in.peek(); }
+    void consume() { cur = in.get(); if(cur=='\n') line++; }
 
-int main() {
-    int v1 = 1;
-    int v2 = 2;
-    int v3 = 3;
-    int v4 = 4;
-    int v5 = 5;
-    int v6 = 6;
-    int v7 = 7;
-    int v8 = 8;
-    int v9 = 9;
-    int v10 = 10;
-    int v11 = 11;
-    int v12 = 12;
-    int v13 = 13;
-    int v14 = 14;
-    int v15 = 15;
-    int v16 = 16;
+    bool isIdentStart(int c){ return c=='_' || isalpha(c); }
+    bool isIdentPart(int c){ return c=='_' || isalnum(c); }
 
-    int result1 = (v1, 2, v3, 4, v5, 6, v7, 8);
+    Token nextToken() {
+        while(cur!=EOF && isspace(cur)) consume();
 
-    int result2 = sum16(v1, v2, v3, v4, v5, v6, v7, v8,
-                        9, 10, 11, 12, result1 + v13, result1 - v14, result1 + v15, result1 - v16);
+        if(cur=='/'){
+            int next = peek();
+            if(next=='/'){ 
+                consume(); consume(); 
+                while(cur!=EOF && cur!='\n') consume(); 
+                return nextToken(); 
+            }
+            if(next=='*'){ 
+                consume(); consume();
+                while(cur!=EOF){
+                    if(cur=='*' && peek()=='/'){
+                        consume(); consume();
+                        break;
+                    }
+                    consume();
+                }
+                return nextToken(); 
+            }
+        }
 
-    int v17 = 17;
-    int v18 = 18;
-    int v19 = 19;
-    int v20 = 20;
-    int v21 = 21;
-    int v22 = 22;
-    int v23 = 23;
-    int v24 = 24;
-    int v25 = 25;
-    int v26 = 26;
-    int v27 = 27;
-    int v28 = 28;
-    int v29 = 29;
-    int v30 = 30;
-    int v31 = 31;
-    int v32 = 32;
+        Token tok; tok.line = line;
+        if(cur==EOF || cur==-1){ tok.type=TokType::END; return tok; }
 
-    int result3 = sum32(
-        v1, v2, v3, v4, v5, v6, v7, v8,
-        v9, v10, v11, v12, v13, v14, v15, v16,
-        v17, v18, v19, v20, v21, v22, v23, v24,
-        v25, v26, v27, v28, v29, v30, v31, v32);
+        if(isIdentStart(cur)){
+            string s;
+            while(cur!=EOF && isIdentPart(cur)){ s.push_back(cur); consume(); }
+            tok.lexeme=s;
+            if(s=="int") tok.type=TokType::KW_INT;
+            else if(s=="void") tok.type=TokType::KW_VOID;
+            else if(s=="if") tok.type=TokType::KW_IF;
+            else if(s=="else") tok.type=TokType::KW_ELSE;
+            else if(s=="while") tok.type=TokType::KW_WHILE;
+            else if(s=="break") tok.type=TokType::KW_BREAK;
+            else if(s=="continue") tok.type=TokType::KW_CONTINUE;
+            else if(s=="return") tok.type=TokType::KW_RETURN;
+            else tok.type=TokType::ID;
+            return tok;
+        }
 
-    int result4 = sum64(
-        v1, v2, v3, v4, v5, v6, v7, v8,
-        9, 10, 11, 12, 13, 14, 15, 16,
-        v17, v18, v19, v20, v21, v22, v23, v24,
-        25, 26, 27, 28, 29, 30, 31, 32,
-        v1 + 1, v2 + 2, v3 + 3, v4 + 4, v5 + 5, v6 + 6, v7 + 7, v8 + 8,
-        v9 * 2, v10 * 3, v11 * 4, v12 * 5, v13 * 6, v14 * 7, v15 * 8, v16 * 9,
-        v1 + v17, v2 - v18, v3 + v19, v4 - v20, v5 + v21, v6 - v22, v7 + v23, v8 - v24,
-        v1 * v9 + result3, v2 * v10 - result3, v3 * v11 + result3, v4 * v12 - result3, v5 * v13 + result3, v6 * v14 - result3, v7 * v15 + result3, v8 * v16 - result3);
+        if(isdigit(cur)){
+            string s; while(cur!=EOF && isdigit(cur)){ s.push_back(cur); consume(); }
+            tok.type=TokType::NUMBER; tok.lexeme=s; return tok;
+        }
 
-    int final_result = result1 + result2 - result3 + result4;
+        switch(cur){
+            case '+': tok.type=TokType::PLUS; consume(); break;
+            case '-': tok.type=TokType::MINUS; consume(); break;
+            case '*': tok.type=TokType::MUL; consume(); break;
+            case '/': tok.type=TokType::DIV; consume(); break;
+            case '%': tok.type=TokType::MOD; consume(); break;
+            case ';': tok.type=TokType::SEMI; consume(); break;
+            case ',': tok.type=TokType::COMMA; consume(); break;
+            case '(': tok.type=TokType::LPAREN; consume(); break;
+            case ')': tok.type=TokType::RPAREN; consume(); break;
+            case '{': tok.type=TokType::LBRACE; consume(); break;
+            case '}': tok.type=TokType::RBRACE; consume(); break;
+            case '!': consume(); if(cur=='='){ consume(); tok.type=TokType::NE; } else tok.type=TokType::LNOT; break;
+            case '=': consume(); if(cur=='='){ consume(); tok.type=TokType::EQ; } else tok.type=TokType::ASSIGN; break;
+            case '<': consume(); if(cur=='='){ consume(); tok.type=TokType::LE; } else tok.type=TokType::LT; break;
+            case '>': consume(); if(cur=='='){ consume(); tok.type=TokType::GE; } else tok.type=TokType::GT; break;
+            case '&': consume(); if(cur=='&'){ tok.type=TokType::LAND; consume(); } else tok.type=TokType::UNKNOWN; break;
+            case '|': consume(); if(cur=='|'){ tok.type=TokType::LOR; consume(); } else tok.type=TokType::UNKNOWN; break;
+            default: tok.type=TokType::UNKNOWN; consume(); break;
+        }
+        return tok;
+    }
+};
 
-    return final_result % 1234;
+class Parser {
+    Lexer lex;
+    Token cur;
+    vector<int> errors;
+    set<int> error_set;
+
+    map<string,bool> functions_int;
+    map<string,int> functions_line;
+    vector<map<string,int>> var_scopes;
+
+    bool in_loop = false;
+    bool has_main = false;
+
+public:
+    Parser(istream &is): lex(is){ cur=lex.nextToken(); }
+
+    void add_error(int ln){ if(!error_set.count(ln)){ errors.push_back(ln); error_set.insert(ln); } }
+    void advance(){ cur=lex.nextToken(); }
+    bool accept(TokType t){ if(cur.type==t){ advance(); return true;} return false; }
+    bool expect(TokType t, int stmt_line){ if(cur.type==t){ advance(); return true;} add_error(stmt_line); return false; }
+
+    bool isVarDeclared(const string &name){
+        for(int i=(int)var_scopes.size()-1;i>=0;i--) if(var_scopes[i].count(name)) return true;
+        return false;
+    }
+
+    void parseCompUnit(){
+        while(cur.type!=TokType::END){
+            if(cur.type==TokType::KW_INT || cur.type==TokType::KW_VOID) {
+                var_scopes.clear();
+                in_loop = false;
+                parseFuncDef();
+            }
+            else { add_error(cur.line); while(cur.type!=TokType::KW_INT && cur.type!=TokType::KW_VOID && cur.type!=TokType::END) advance();}
+        }
+        if(!has_main) add_error(1);
+    }
+
+    void parseFuncDef(){
+        bool is_int = (cur.type==TokType::KW_INT); 
+        int func_line = cur.line;
+        advance();
+        int decl_line = cur.line;
+        string fname;
+        if(cur.type==TokType::ID){ fname=cur.lexeme; advance(); }
+        else{ add_error(decl_line); sync_until({TokType::LPAREN}); if(cur.type==TokType::ID) { fname=cur.lexeme; advance(); } }
+        
+        int lparen_line = cur.line;
+        expect(TokType::LPAREN, lparen_line);
+        vector<string> params;
+        if(cur.type!=TokType::RPAREN){
+            while(true){
+                if(cur.type==TokType::KW_INT){ advance(); if(cur.type==TokType::ID){ params.push_back(cur.lexeme); advance(); } else add_error(cur.line);}
+                else add_error(cur.line);
+                if(cur.type==TokType::COMMA) advance(); else break;
+            }
+        }
+        expect(TokType::RPAREN, lparen_line);
+        if(functions_int.count(fname)) add_error(decl_line);
+        else{ functions_int[fname]=is_int; functions_line[fname]=decl_line; }
+        if(fname=="main" && is_int && params.empty()) has_main=true;
+
+        var_scopes.emplace_back();
+        for(auto &p: params) var_scopes.back()[p]=decl_line;
+        parseBlock();
+        var_scopes.pop_back();
+        in_loop = false;
+    }
+
+    bool parseBlock(){
+        int block_line = cur.line;
+        if(!expect(TokType::LBRACE, block_line)) return false;
+        var_scopes.emplace_back();
+        
+        while(cur.type != TokType::RBRACE && cur.type != TokType::END){
+            parseStmt();
+        }
+        
+        bool rbrace_ok = expect(TokType::RBRACE, block_line);
+        var_scopes.pop_back();
+        return rbrace_ok;
+    }
+
+    void parseStmt(){
+        int stmt_line = cur.line;
+        if(cur.type==TokType::LBRACE){ parseBlock(); return; }
+        if(cur.type==TokType::SEMI){ advance(); return; }
+
+        if(cur.type==TokType::KW_IF){
+            int if_line = cur.line;
+            advance(); 
+            expect(TokType::LPAREN, if_line); 
+            parseExpr(if_line); 
+            expect(TokType::RPAREN, if_line); 
+            parseStmt();
+            if(cur.type==TokType::KW_ELSE){ advance(); parseStmt(); }
+            return;
+        }
+        if(cur.type==TokType::KW_WHILE){
+            int while_line = cur.line;
+            advance(); 
+            expect(TokType::LPAREN, while_line); 
+            bool old_loop=in_loop; 
+            in_loop=true; 
+            parseExpr(while_line); 
+            expect(TokType::RPAREN, while_line); 
+            parseStmt(); 
+            in_loop=old_loop; 
+            return;
+        }
+        if(cur.type==TokType::KW_BREAK){ advance(); expect(TokType::SEMI, stmt_line); if(!in_loop) add_error(stmt_line); return; }
+        if(cur.type==TokType::KW_CONTINUE){ advance(); expect(TokType::SEMI, stmt_line); if(!in_loop) add_error(stmt_line); return; }
+        if(cur.type==TokType::KW_RETURN){ advance(); parseExpr(stmt_line); expect(TokType::SEMI, stmt_line); return; }
+
+        if(cur.type==TokType::KW_INT){
+            advance();
+            if(cur.type!=TokType::ID){ add_error(stmt_line); sync_until({TokType::SEMI}); if(cur.type==TokType::SEMI) advance(); return; }
+            string var = cur.lexeme; advance();
+            if(expect(TokType::ASSIGN, stmt_line)) parseExpr(stmt_line);
+            expect(TokType::SEMI, stmt_line);
+            var_scopes.back()[var]=stmt_line; return;
+        }
+
+        if(cur.type==TokType::ID){
+            Token saved=cur; advance();
+            if(cur.type==TokType::ASSIGN){ 
+                advance(); 
+                parseExpr(stmt_line); 
+                expect(TokType::SEMI, stmt_line); 
+                if(!isVarDeclared(saved.lexeme)) add_error(stmt_line); 
+                return; 
+            }
+            else{ parseExprLeadingId(saved, stmt_line); expect(TokType::SEMI, stmt_line); return; }
+        }
+
+        if(isExprStart(cur.type)){ parseExpr(stmt_line); expect(TokType::SEMI, stmt_line); return; }
+
+        add_error(stmt_line); sync_until({TokType::SEMI, TokType::RBRACE, TokType::END}); if(cur.type==TokType::SEMI) advance();
+    }
+
+    void parseExpr(int stmt_line){ parseLOr(stmt_line); }
+
+    void parseExprLeadingId(Token &lead, int stmt_line){
+        if(cur.type==TokType::LPAREN){ 
+            int call_line = lead.line;
+            advance(); 
+            if(cur.type!=TokType::RPAREN){ 
+                while(true){ 
+                    parseExpr(stmt_line); 
+                    if(cur.type==TokType::COMMA) advance(); 
+                    else break; 
+                } 
+            } 
+            expect(TokType::RPAREN, call_line); 
+        }
+        else{ if(!isVarDeclared(lead.lexeme)) add_error(stmt_line); }
+        parseBinaryTail(stmt_line);
+    }
+
+    void parseBinaryTail(int stmt_line){ while(isBinOp(cur.type)){ advance(); parseUnary(stmt_line); } }
+    bool isBinOp(TokType t){ switch(t){ case TokType::PLUS: case TokType::MINUS: case TokType::MUL: case TokType::DIV: case TokType::MOD: case TokType::LT: case TokType::GT: case TokType::LE: case TokType::GE: case TokType::EQ: case TokType::NE: case TokType::LAND: case TokType::LOR: return true; default: return false; } }
+
+    void parseLOr(int stmt_line){ parseLAnd(stmt_line); while(cur.type==TokType::LOR){ advance(); parseLAnd(stmt_line); } }
+    void parseLAnd(int stmt_line){ parseRel(stmt_line); while(cur.type==TokType::LAND){ advance(); parseRel(stmt_line); } }
+    void parseRel(int stmt_line){ 
+        parseAdd(stmt_line); 
+        while(cur.type==TokType::LT || cur.type==TokType::GT || cur.type==TokType::LE || cur.type==TokType::GE || cur.type==TokType::EQ || cur.type==TokType::NE){ 
+            advance(); 
+            parseAdd(stmt_line); 
+        }
+    }
+    void parseAdd(int stmt_line){ parseMul(stmt_line); while(cur.type==TokType::PLUS || cur.type==TokType::MINUS){ advance(); parseMul(stmt_line); } }
+    void parseMul(int stmt_line){ parseUnary(stmt_line); while(cur.type==TokType::MUL || cur.type==TokType::DIV || cur.type==TokType::MOD){ advance(); parseUnary(stmt_line); } }
+    void parseUnary(int stmt_line){ if(cur.type==TokType::PLUS || cur.type==TokType::MINUS || cur.type==TokType::LNOT){ advance(); parseUnary(stmt_line); return;} parsePrimary(stmt_line); }
+    void parsePrimary(int stmt_line){
+        if(cur.type==TokType::ID){ 
+            Token t=cur; 
+            int id_line = cur.line;
+            advance();
+            if(cur.type==TokType::LPAREN){ 
+                advance(); 
+                if(cur.type!=TokType::RPAREN){ 
+                    while(true){ 
+                        parseExpr(stmt_line); 
+                        if(cur.type==TokType::COMMA) advance(); 
+                        else break; 
+                    } 
+                } 
+                expect(TokType::RPAREN, id_line);
+            }
+            else if(!isVarDeclared(t.lexeme)) add_error(stmt_line);
+            return;
+        } else if(cur.type==TokType::NUMBER){ advance(); return;}
+        else if(cur.type==TokType::LPAREN){ 
+            int lparen_line = cur.line;
+            advance(); 
+            parseExpr(stmt_line); 
+            expect(TokType::RPAREN, lparen_line); 
+            return;
+        }
+        else{ add_error(stmt_line); advance(); return;}
+    }
+
+    bool isExprStart(TokType t){ return t==TokType::NUMBER || t==TokType::LPAREN || t==TokType::PLUS || t==TokType::MINUS || t==TokType::LNOT; }
+
+    void sync_until(set<TokType> syncset){ int iter=0; while(cur.type!=TokType::END && !syncset.count(cur.type) && iter<10000){ advance(); ++iter; } }
+
+    vector<int> get_errors(){ return errors; }
+};
+
+int main(){
+    ios::sync_with_stdio(false); cin.tie(nullptr);
+    
+    string input_content;
+    string line;
+    while(getline(cin, line)) {
+        input_content += line + "\n";
+    }
+    
+    istringstream iss(input_content);
+    Parser p(iss);
+    p.parseCompUnit();
+    auto errs = p.get_errors();
+    
+    if(errs.empty()){ 
+        cout<<"accept\n"; 
+    }
+    else{ 
+        cout<<"reject\n"; 
+        for(int ln: errs) cout<<ln<<"\n"; 
+    }
 }
